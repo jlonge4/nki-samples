@@ -73,7 +73,11 @@ def nki_transformer_block(x, weights, deterministic=True):
         return nki_rmsnorm_kernel_isa(a, g, deterministic=deterministic)
 
     def attn(q, k, v):
-        return nki_attention_kernel_isa(q, k, v, deterministic=deterministic)
+        seq = q.shape[0]
+        # Causal mask: upper-triangle entries attend to future tokens, set to -1e9
+        causal_mask = torch.full((seq, seq), -1e9, dtype=torch.float32, device=q.device)
+        causal_mask = torch.triu(causal_mask, diagonal=1)
+        return nki_attention_kernel_isa(q, k, v, deterministic=deterministic, attn_bias=causal_mask)
 
     # 1. Pre-attention RMSNorm
     x_norm = rms(x, w['g_attn'])                  # [seq, d_model]

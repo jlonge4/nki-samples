@@ -38,6 +38,8 @@ def nki_matmul_kernel_isa(a, b, deterministic=True):
     K, M = a.shape
     N = b.shape[1]
     M_TILE = 128
+    # N_TILE <= 512: nc_matmul moving free-dimension limit on NeuronCore v3 (trn2)
+    N_TILE = 128
 
     # ONLY DIFFERENCE: K_TILE strategy (must be ≤128: partition dim constraint on stationary/moving)
     if deterministic:
@@ -46,36 +48,40 @@ def nki_matmul_kernel_isa(a, b, deterministic=True):
         K_TILE = min(64, K)   # Smaller tiles → more accumulations → different rounding
 
     assert K % K_TILE == 0, f"K={K} must be divisible by K_TILE={K_TILE}"
+    assert N % N_TILE == 0, f"N={N} must be divisible by N_TILE={N_TILE}"
 
     result = nl.ndarray((M, N), dtype=a.dtype, buffer=nl.shared_hbm)
 
-    for m in nl.affine_range(M // M_TILE):
-        # PSUM always accumulates in float32 regardless of input dtype
-        c_psum = nl.zeros((M_TILE, N), dtype=nl.float32, buffer=nl.psum)
+    for n in nl.affine_range(N // N_TILE):
+        n_start = n * N_TILE
 
-        for k in nl.affine_range(K // K_TILE):
-            a_start = k * K_TILE
-            a_end = min(K, a_start + K_TILE)
+        for m in nl.affine_range(M // M_TILE):
+            # PSUM always accumulates in float32 regardless of input dtype
+            c_psum = nl.zeros((M_TILE, N_TILE), dtype=nl.float32, buffer=nl.psum)
+
+            for k in nl.affine_range(K // K_TILE):
+                a_start = k * K_TILE
+                a_end = min(K, a_start + K_TILE)
+                m_start = m * M_TILE
+                m_end = min(M, m_start + M_TILE)
+
+                a_tile = nl.ndarray((K_TILE, M_TILE), dtype=a.dtype, buffer=nl.sbuf)
+                nisa.dma_copy(dst=a_tile, src=a[a_start:a_end, m_start:m_end])
+
+                b_start = k * K_TILE
+                b_end = min(K, b_start + K_TILE)
+                b_tile = nl.ndarray((K_TILE, N_TILE), dtype=b.dtype, buffer=nl.sbuf)
+                nisa.dma_copy(dst=b_tile, src=b[b_start:b_end, n_start:n_start + N_TILE])
+
+                # Matmul — multiple writes to same c_psum trigger hardware accumulation
+                nisa.nc_matmul(dst=c_psum, stationary=a_tile, moving=b_tile)
+
+            # Copy PSUM (float32) -> SBUF (input dtype), then DMA to HBM
+            c_sbuf = nl.ndarray((M_TILE, N_TILE), dtype=a.dtype, buffer=nl.sbuf)
+            nisa.tensor_copy(dst=c_sbuf, src=c_psum)
+
             m_start = m * M_TILE
             m_end = min(M, m_start + M_TILE)
-
-            a_tile = nl.ndarray((K_TILE, M_TILE), dtype=a.dtype, buffer=nl.sbuf)
-            nisa.dma_copy(dst=a_tile, src=a[a_start:a_end, m_start:m_end])
-
-            b_start = k * K_TILE
-            b_end = min(K, b_start + K_TILE)
-            b_tile = nl.ndarray((K_TILE, N), dtype=b.dtype, buffer=nl.sbuf)
-            nisa.dma_copy(dst=b_tile, src=b[b_start:b_end, 0:N])
-
-            # Matmul — multiple writes to same c_psum trigger hardware accumulation
-            nisa.nc_matmul(dst=c_psum, stationary=a_tile, moving=b_tile)
-
-        # Copy PSUM (float32) -> SBUF (input dtype), then DMA to HBM
-        c_sbuf = nl.ndarray((M_TILE, N), dtype=a.dtype, buffer=nl.sbuf)
-        nisa.tensor_copy(dst=c_sbuf, src=c_psum)
-
-        c_start = m * M_TILE
-        c_end = min(M, c_start + M_TILE)
-        nisa.dma_copy(dst=result[c_start:c_end, 0:N], src=c_sbuf)
+            nisa.dma_copy(dst=result[m_start:m_end, n_start:n_start + N_TILE], src=c_sbuf)
 
     return result

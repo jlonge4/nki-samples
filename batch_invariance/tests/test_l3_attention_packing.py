@@ -45,7 +45,10 @@ def test_b1_packing(attn_fn) -> bool:
         pad = seq_k_big - seq_q
         k_pad = np.concatenate([k, np.zeros((pad, d), dtype=ml_dtypes.bfloat16)], axis=0)
         v_pad = np.concatenate([v, np.zeros((pad, d), dtype=ml_dtypes.bfloat16)], axis=0)
-        out_pad = attn_fn(q, k_pad, v_pad, deterministic=True)
+        # Key-padding mask: 0 for real KV positions, -1e9 for zero-padded positions
+        attn_bias = np.zeros((seq_q, seq_k_big), dtype=np.float32)
+        attn_bias[:, seq_q:] = -1e9
+        out_pad = attn_fn(q, k_pad, v_pad, deterministic=True, attn_bias=attn_bias)
         ok = bitwise_equal(out_base, out_pad)
         if not ok:
             all_ok = False

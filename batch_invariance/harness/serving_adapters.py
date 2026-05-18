@@ -34,6 +34,10 @@ except ImportError:
 
 _WEIGHT_CACHE: Dict[Tuple[str, int, int], np.ndarray] = {}
 
+# RMSNorm kernel requires M % BATCH_TILE == 0.  Inputs are padded to the next
+# multiple of this value and outputs are sliced back to the original M.
+_RMSNORM_BATCH_TILE = 128
+
 
 def has_neuron() -> bool:
     return _HAS_NEURON
@@ -54,13 +58,29 @@ def _get_weight(name: str, k: int, n: int, seed: int = 0) -> np.ndarray:
     return _WEIGHT_CACHE[key]
 
 
+def _pad_to_tile(x: np.ndarray, tile: int) -> tuple[np.ndarray, int]:
+    """Pad first dimension to a multiple of tile. Returns (padded, original_M)."""
+    M = x.shape[0]
+    M_padded = ((M + tile - 1) // tile) * tile
+    if M_padded > M:
+        pad_shape = (M_padded - M,) + x.shape[1:]
+        x = np.concatenate([x, np.zeros(pad_shape, dtype=x.dtype)], axis=0)
+    return x, M
+
+
 def make_rmsnorm_op(k: int = N_EMBD) -> Callable[[np.ndarray], np.ndarray]:
     g = np.ones(k, dtype=ml_dtypes.bfloat16)
 
     def fn(x: np.ndarray) -> np.ndarray:
-        return nki_rmsnorm_kernel_isa(x, g, deterministic=True)
+        x_padded, M = _pad_to_tile(x, _RMSNORM_BATCH_TILE)
+        result = nki_rmsnorm_kernel_isa(x_padded, g, deterministic=True)
+        return result[:M]
 
     return fn
+
+
+# Matmul kernel requires M % M_TILE == 0 (M_TILE=128).
+_MATMUL_M_TILE = 128
 
 
 def make_matmul_op(k: int, n: int, weight_name: str = "linear") -> Callable[[np.ndarray], np.ndarray]:
@@ -68,6 +88,8 @@ def make_matmul_op(k: int, n: int, weight_name: str = "linear") -> Callable[[np.
 
     def fn(x: np.ndarray) -> np.ndarray:
         # x: (M, K), w: (K, N) -> kernel(a=[K,M], b=[K,N]) -> (M, N)
-        return nki_matmul_kernel_isa(x.T.copy(), w, deterministic=True)
+        x_padded, M = _pad_to_tile(x, _MATMUL_M_TILE)
+        result = nki_matmul_kernel_isa(x_padded.T.copy(), w, deterministic=True)
+        return result[:M]
 
     return fn

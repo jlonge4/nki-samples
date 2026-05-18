@@ -27,8 +27,15 @@ from kernels.matmul_batch_invariant import nki_matmul_kernel_isa
 
 
 def matmul_rows(a_mk: torch.Tensor, w_kn: torch.Tensor, deterministic: bool = True) -> torch.Tensor:
-    """Standard (M, K) @ (K, N) via NKI kernel (a=[K,M], b=[K,N])."""
-    return nki_matmul_kernel_isa(a_mk.T.contiguous(), w_kn, deterministic=deterministic)
+    """Standard (M, K) @ (K, N) via NKI kernel. Pads M to multiple of 128 (kernel contract)."""
+    M, K = a_mk.shape
+    M_TILE = 128
+    M_padded = ((M + M_TILE - 1) // M_TILE) * M_TILE
+    if M_padded > M:
+        pad = torch.zeros(M_padded - M, K, dtype=a_mk.dtype, device=a_mk.device)
+        a_mk = torch.cat([a_mk, pad], dim=0)
+    result = nki_matmul_kernel_isa(a_mk.T.contiguous(), w_kn, deterministic=deterministic)
+    return result[:M]
 
 
 def assert_row_matches_isolated(
