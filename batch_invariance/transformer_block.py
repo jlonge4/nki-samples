@@ -53,12 +53,12 @@ def nki_transformer_block(x, weights, deterministic=True):
         -> RMSNorm -> FFN up -> ReLU -> FFN down -> residual
 
     Args:
-        x:             [seq, d_model]  on XLA device
-        weights:       dict from make_block_weights, on XLA device
+        x:             [seq, d_model] on Trainium (``device='neuron'`` or legacy XLA)
+        weights:       dict from make_block_weights on the same device
         deterministic: passed to all three NKI kernels
 
     Returns:
-        [seq, d_model] on XLA device
+        [seq, d_model] on device
     """
     device = x.device
 

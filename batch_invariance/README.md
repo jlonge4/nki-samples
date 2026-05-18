@@ -55,22 +55,48 @@ KV_TILE = 128 if deterministic else 64
 
 In bfloat16, both configurations produce identical results. In float32, they differ.
 
+## E2E harness (`e2e-determinism` branch)
+
+Altitude ladder from first-principles tiles to nanochat-shaped serving tests:
+
+| Layer | Script |
+|-------|--------|
+| L0 | `test_tile_invariance.py` (det vs nondet) |
+| L1 | `tests/test_l1_serving_battery.py` (`bi_testkit`, H=1280) |
+| L2 | `tests/test_l2_continuous_batching.py` |
+| L3 | `tests/test_l3_attention_packing.py` |
+| L4 | `tests/test_l4_block_e2e.py` |
+| — | `tests/test_determinism_harness.py` |
+
+```bash
+cd batch_invariance
+# TorchNeuron (PyTorch Native on Trn2/Trn3) or legacy torch-neuronx venv
+source <your-neuron-venv>/bin/activate
+./run_e2e_harness.sh
+```
+
+**Device stack:** [Native PyTorch for Trainium](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/frameworks/torch/pytorch-native-overview.html) — `torch.device("neuron")`, `import torch_neuronx` for NKI. L0/L4 use `harness/neuron_device.py` (torch_xla fallback if needed).
+
+Docs: `docs/BATCH_INVARIANT_KERNELS.md`, `docs/NANOCHAT_INTEGRATION.md` (optional external nanochat — **no clone in repo**).
+
+`harness/bi_testkit.py` is vendored from the peer batch-invariance study (minimal steal).
+
 ## Project Structure
 
 ```
 batch_invariance/
 ├── README.md
-├── EXPLAINER.md                    # Deep-dive: why bfloat16 gives free invariance
+├── run_e2e_harness.sh
+├── harness/                        # serving tests + vendored bi_testkit
+├── tests/                          # L1–L4 + determinism
+├── docs/
 ├── kernels/
-│   ├── matmul_batch_invariant.py   # Matmul with variable K_TILE
-│   ├── rmsnorm_batch_invariant.py  # RMSNorm with variable HIDDEN_TILE
-│   └── attention_batch_invariant.py # Attention with fixed softmax tile, variable scores@V tile
-├── transformer_block.py            # Pre-norm block composing all three kernels
-├── test_tile_invariance.py         # Standalone: individual kernel invariance (linspace inputs)
-├── test_block_invariance.py        # Standalone: full block invariance (bfloat16 and float32)
-├── test_batch_invariance.ipynb     # Full interactive test suite
-├── simulate_batch_invariance.py    # CPU simulator: why bfloat16 is invariant
-└── inspect_psum.py                 # CPU simulator: inspect float32 PSUM intermediate values
+├── transformer_block.py
+├── test_tile_invariance.py
+├── test_block_invariance.py
+├── test_batch_invariance.ipynb
+├── simulate_batch_invariance.py
+└── inspect_psum.py
 ```
 
 ## Running the Tests
@@ -78,13 +104,10 @@ batch_invariance/
 ### Standalone scripts (recommended first)
 
 ```bash
-cd contributed/batch_invariance
-source /opt/aws_neuronx_venv_pytorch_2_9/bin/activate
+cd batch_invariance
+source <your-neuron-venv>/bin/activate
 
-# Individual kernel invariance
-python3 test_tile_invariance.py
-
-# Full transformer block (bfloat16 PASS + float32 diff>0)
+python3 test_tile_invariance.py      # device=neuron (TorchNeuron)
 python3 test_block_invariance.py
 ```
 
