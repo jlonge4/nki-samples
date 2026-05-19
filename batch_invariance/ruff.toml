@@ -1,0 +1,16 @@
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = ["E", "F", "I", "W"]
+
+[lint.per-file-ignores]
+# Notebook cells: imports after xm/setup
+"test_batch_invariance.ipynb" = ["E402", "E501"]
+# sys.path.insert(ROOT) before local imports
+"tests/*.py" = ["E402"]
+"tools/*.py" = ["E402"]
+"demo_deterministic_pipe.py" = ["E402"]
+
+[lint.isort]
+known-first-party = ["harness", "kernels"]

@@ -12,15 +12,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from harness.run_utils import count_failures, require_neuron
 from harness.nanochat_shapes import (  # noqa: E402
     LINEAR_SHAPES,
     MATMUL_WB_PAIRS,
-    NANOCHAT_WB_PAIRS,
     N_EMBD,
+    NANOCHAT_WB_PAIRS,
     NEIGHBOR_CONFIGS,
     POSITION_M_VALUES,
 )
+from harness.run_utils import count_failures, require_neuron
+
+
 def main() -> int:
     if not require_neuron():
         return 0
@@ -39,7 +41,8 @@ def main() -> int:
     print("\n#### RMSNorm @ nanochat H=1280 (deterministic=True) ####")
     op_rms = numpy_bf16_op(make_rmsnorm_op(N_EMBD))
     res_rms = run_battery(
-        op_rms, N_EMBD,
+        op_rms,
+        N_EMBD,
         whole_block_pairs=NANOCHAT_WB_PAIRS,
         **kwargs,
     )
@@ -54,7 +57,8 @@ def main() -> int:
         print(f"\n#### MatMul {name} K={k} N={n} (deterministic=True) ####")
         op_mm = numpy_bf16_op(make_matmul_op(k, n, weight_name=name))
         res_mm = run_battery(
-            op_mm, k,
+            op_mm,
+            k,
             whole_block_pairs=MATMUL_WB_PAIRS,
             **kwargs,
         )

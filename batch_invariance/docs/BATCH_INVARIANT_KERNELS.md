@@ -6,7 +6,7 @@ DeepSeek-V4 §3.3-style goal for **forward** ops on AWS Neuron: bitwise batch in
 
 | Layer | What | Script |
 |-------|------|--------|
-| L0 | Tile A vs B (mechanism) | `test_tile_invariance.py` |
+| L0 | Tile A vs B (mechanism) | `tests/test_l0_tile_invariance.py` |
 | L1 | Part A: M, position, neighbors @ nanochat K | `tests/test_l1_serving_battery.py` |
 | L2 | Continuous batching (packing, neighbors) | `tests/test_l2_continuous_batching.py` |
 | L3 | Attention packing + seqlen sweep | `tests/test_l3_attention_packing.py` |

@@ -5,5 +5,8 @@
 - `nanochat_shapes.py` — d20 shape constants (no nanochat import).
 - `serving_adapters.py` — NumPy wrappers for `@nki.jit` kernels (`deterministic=True`).
 - `run_utils.py` — `require_neuron()` checks nki + Trainium PyTorch backend.
+- `sim_utils.py` / `simulate_adapters.py` — `nki.simulate` path (CPU, no torch device).
 
 PyTorch Native: https://awsdocs-neuron.readthedocs-hosted.com/en/latest/frameworks/torch/pytorch-native-overview.html
+
+CPU simulator: https://awsdocs-neuron.readthedocs-hosted.com/en/latest/nki/guides/nki_simulator.html

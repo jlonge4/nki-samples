@@ -185,7 +185,7 @@ bfloat16 inputs are already snapped to a coarse grid (`-0.996094` instead of `-0
 
 ## Simulator evidence: inspecting the float32 PSUM directly
 
-`inspect_psum.py` snapshots the float32 PSUM after every K tile for both K_TILE=128 and K_TILE=64.
+`./run.sh debug psum` snapshots the float32 PSUM after every K tile for both K_TILE=128 and K_TILE=64.
 
 ```
 bfloat16 inputs:
@@ -202,3 +202,11 @@ float32 inputs:
 ```
 
 > Invariance is established at **multiply time**, not at **cast time**. The divergence for float32 lives inside the float32 PSUM itself.
+
+---
+
+## See also (project-level, not matmul PSUM)
+
+This file is the **mechanism** story for one kernel (K-tile matmul + PSUM). For everything added on the `e2e-determinism` branch — serving harness (L0–L4), M-tail slabs, CPU simulator, bi_testkit battery results, toy inference demo — see **[README.md](README.md)** § *Recent additions & results*.
+
+**Serving invariance** (row `i` unchanged when `M`, slot, or neighbors change) is a separate claim from **tile invariance** above; it is tested with `harness/bi_testkit.py`, not by comparing K_TILE=128 vs 64 on the same full tensor.

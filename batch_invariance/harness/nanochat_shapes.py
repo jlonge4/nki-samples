@@ -19,22 +19,22 @@ LINEAR_SHAPES = {
 
 # Part A whole-block M pairs (nanochat-relevant + Neuron boundary cases)
 NANOCHAT_WB_PAIRS = [
-    (1, 2), (1, 128), (1, 256),
+    (1, 2),
+    (1, 128),
+    (1, 256),
     (2, 128),
-    (127, 128), (127, 256),
-    (128, 256), (128, 2048),
-    (255, 256), (255, 2048),
+    (127, 128),
+    (127, 256),
+    (128, 256),
+    (128, 2048),
+    (255, 256),
+    (255, 2048),
     (1024, 2048),
     (2048, 4096),
 ]
 
-# Matmul kernel requires M % 128 == 0 (full M_TILE slabs only)
-MATMUL_WB_PAIRS = [
-    (128, 256),
-    (128, 2048),
-    (1024, 2048),
-    (2048, 4096),
-]
+# Same M pairs as RMSNorm; matmul uses M tail slabs (no adapter padding)
+MATMUL_WB_PAIRS = NANOCHAT_WB_PAIRS
 
 POSITION_M_VALUES = (128, 255, 256, 2048)
 NEIGHBOR_CONFIGS = ((128, 0), (255, 128), (256, 128), (2048, 1024))

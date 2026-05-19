@@ -2,6 +2,7 @@
 # Requires: device from harness.neuron_device (TorchNeuron) or legacy xm.
 
 import torch
+
 from harness.neuron_device import get_device, init_nki_runtime, sync_device, to_neuron
 from kernels.matmul_batch_invariant import nki_matmul_kernel_isa
 

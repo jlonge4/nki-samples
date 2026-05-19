@@ -6,17 +6,18 @@ Combines per-kernel run-to-run with L1-style spot checks.
 
 from __future__ import annotations
 
-import numpy as np
-
 import sys
 from pathlib import Path
+
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import harness.run_utils  # noqa: F401
-from harness.run_utils import require_neuron
 from harness.bitwise_numpy import bitwise_equal
 from harness.nanochat_shapes import N_EMBD
+from harness.run_utils import require_neuron
+
 try:
     import ml_dtypes
 except ImportError:

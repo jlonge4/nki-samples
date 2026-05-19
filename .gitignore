@@ -4,3 +4,4 @@ doc/_apidoc
 doc/generated
 __pycache__
 venv
+batch_invariance/nki-cpu-sim

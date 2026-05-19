@@ -78,10 +78,10 @@ from typing import Callable, Optional
 
 import torch
 
-
 # ============================================================
 # metrics
 # ============================================================
+
 
 def _uint_view(x: torch.Tensor) -> torch.Tensor:
     x = x.detach().cpu().contiguous()
@@ -103,8 +103,12 @@ def _ordered_int(x: torch.Tensor) -> torch.Tensor:
     so that adjacent representable floats differ by exactly 1 and the ordering
     matches float ordering. Required for correct ULP across sign changes.
     """
-    nbits = {torch.bfloat16: 16, torch.float16: 16,
-             torch.float32: 32, torch.float64: 64}[x.dtype]
+    nbits = {
+        torch.bfloat16: 16,
+        torch.float16: 16,
+        torch.float32: 32,
+        torch.float64: 64,
+    }[x.dtype]
     sign_bit = 1 << (nbits - 1)
     umask = (1 << nbits) - 1
     u = _uint_view(x).to(torch.int64) & umask
@@ -127,6 +131,7 @@ def ulp_diff(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 # input specs
 # ============================================================
 
+
 @dataclass
 class InputSpec:
     name: str
@@ -137,12 +142,14 @@ def _randn(scale: float) -> Callable:
     def gen(shape, seed):
         g = torch.Generator().manual_seed(seed)
         return (torch.randn(*shape, generator=g, dtype=torch.float32) * scale).to(torch.bfloat16)
+
     return gen
 
 
 def _zeros() -> Callable:
     def gen(shape, seed):
         return torch.zeros(*shape, dtype=torch.bfloat16)
+
     return gen
 
 
@@ -156,11 +163,13 @@ def _sparse_heavy(scale: float, frac: float) -> Callable:
         vals = torch.randn(n, generator=g_val, dtype=torch.float32) * scale
         mask = (torch.rand(n, generator=g_mask) < frac).to(torch.float32)
         return (vals * mask).reshape(shape).to(torch.bfloat16)
+
     return gen
 
 
 def _alternating(mag: float, residual: float) -> Callable:
     """Reduction-order adversarial: row = [+mag, -mag, +mag, -mag, ..., +resid, +resid, ...]"""
+
     def gen(shape, seed):
         *_, K = shape
         # Build one K-vec then broadcast with per-row random residual offsets.
@@ -174,28 +183,32 @@ def _alternating(mag: float, residual: float) -> Callable:
         # broadcast over rows
         out = base.unsqueeze(0).expand(*shape).contiguous().clone()
         return out.to(torch.bfloat16)
+
     return gen
 
 
 def _two_scale(big: float, small: float) -> Callable:
     """One large element + many small elements, position randomized per row."""
+
     def gen(shape, seed):
         g = torch.Generator().manual_seed(seed)
         *prefix, K = shape
         M = 1
         for s in prefix:
             M *= s
-        x = (torch.randn(M, K, generator=g, dtype=torch.float32) * small)
+        x = torch.randn(M, K, generator=g, dtype=torch.float32) * small
         # place `big` at a random column per row
         cols = torch.randint(0, K, (M,), generator=g)
         rows = torch.arange(M)
         x[rows, cols] = big
         return x.reshape(*shape).to(torch.bfloat16)
+
     return gen
 
 
 def _tile_boundary(boundaries: tuple[int, ...], mag: float) -> Callable:
     """Non-zeros only at specific H columns (±1 around each boundary)."""
+
     def gen(shape, seed):
         g = torch.Generator().manual_seed(seed)
         *prefix, K = shape
@@ -213,42 +226,62 @@ def _tile_boundary(boundaries: tuple[int, ...], mag: float) -> Callable:
             cols_t = torch.tensor(cols, dtype=torch.long)
             x[:, cols_t] = torch.randn((M, len(cols)), generator=g, dtype=torch.float32) * mag
         return x.reshape(*shape).to(torch.bfloat16)
+
     return gen
 
 
 DEFAULT_INPUTS: list[InputSpec] = [
-    InputSpec("randn@1",       _randn(1.0)),
-    InputSpec("randn@10",      _randn(10.0)),
-    InputSpec("randn@100",     _randn(100.0)),
-    InputSpec("sparse@5,10%",  _sparse_heavy(scale=5.0, frac=0.1)),
+    InputSpec("randn@1", _randn(1.0)),
+    InputSpec("randn@10", _randn(10.0)),
+    InputSpec("randn@100", _randn(100.0)),
+    InputSpec("sparse@5,10%", _sparse_heavy(scale=5.0, frac=0.1)),
 ]
 
 ADVERSARIAL_INPUTS: list[InputSpec] = [
-    InputSpec("alternating",   _alternating(mag=1e3, residual=1.0)),
-    InputSpec("two_scale",     _two_scale(big=1e4, small=1.0)),
-    InputSpec("tile_boundary", _tile_boundary(boundaries=(63, 64, 127, 128, 255, 256), mag=10.0)),
+    InputSpec("alternating", _alternating(mag=1e3, residual=1.0)),
+    InputSpec("two_scale", _two_scale(big=1e4, small=1.0)),
+    InputSpec(
+        "tile_boundary",
+        _tile_boundary(boundaries=(63, 64, 127, 128, 255, 256), mag=10.0),
+    ),
 ]
 
 # Filler patterns for whole-block tail (neighbor-value isolation coverage).
 DEFAULT_FILLERS: list[InputSpec] = [
-    InputSpec("zeros",         _zeros()),
-    InputSpec("randn@1",       _randn(1.0)),
-    InputSpec("sparse@5,10%",  _sparse_heavy(scale=5.0, frac=0.1)),
+    InputSpec("zeros", _zeros()),
+    InputSpec("randn@1", _randn(1.0)),
+    InputSpec("sparse@5,10%", _sparse_heavy(scale=5.0, frac=0.1)),
 ]
 
 DEFAULT_WB_PAIRS: list[tuple[int, int]] = [
-    (1, 2), (1, 128), (1, 256),
+    (1, 2),
+    (1, 128),
+    (1, 256),
     (2, 128),
-    (127, 128), (127, 256),
-    (128, 256), (128, 2048),
-    (255, 256), (255, 2048),
+    (127, 128),
+    (127, 256),
+    (128, 256),
+    (128, 2048),
+    (255, 256),
+    (255, 2048),
     (1024, 2048),
     (2048, 8192),
 ]
 
 # Multi-M position sweep. Includes aligned, one-below, one-above boundary cases.
 DEFAULT_POSITION_M_VALUES: tuple[int, ...] = (
-    64, 128, 129, 255, 256, 257, 511, 512, 513, 2047, 2048, 2049,
+    64,
+    128,
+    129,
+    255,
+    256,
+    257,
+    511,
+    512,
+    513,
+    2047,
+    2048,
+    2049,
 )
 
 DEFAULT_POSITIONS_M256 = [0, 1, 63, 64, 127, 128, 129, 191, 255]
@@ -269,9 +302,15 @@ def _positions_for(M: int) -> list[int]:
 
 DEFAULT_NEIGHBOR_CONFIGS: tuple[tuple[int, int], ...] = (
     # (M, p)
-    (128, 0), (128, 64), (128, 127),
-    (256, 0), (256, 128), (256, 255),
-    (255, 0), (255, 128), (255, 254),       # tail-slab M
+    (128, 0),
+    (128, 64),
+    (128, 127),
+    (256, 0),
+    (256, 128),
+    (256, 255),
+    (255, 0),
+    (255, 128),
+    (255, 254),  # tail-slab M
     (2048, 1024),
 )
 
@@ -282,9 +321,10 @@ DEFAULT_SEEDS: tuple[int, ...] = (0, 1, 2)
 # result type
 # ============================================================
 
+
 @dataclass
 class TestResult:
-    test: str          # "whole_block" / "position" / "neighbor"
+    test: str  # "whole_block" / "position" / "neighbor"
     config: str
     passed: bool
     n_rows: int
@@ -295,8 +335,10 @@ class TestResult:
     def oneline(self) -> str:
         if self.passed:
             return f"  {self.test:<14} PASS  ({self.n_rows:>5} rows)  {self.config}"
-        return (f"  {self.test:<14} FAIL  bad={self.n_bad_rows}/{self.n_rows} "
-                f"max_ulp={self.max_ulp} max_abs={self.max_abs:.2e}  {self.config}")
+        return (
+            f"  {self.test:<14} FAIL  bad={self.n_bad_rows}/{self.n_rows} "
+            f"max_ulp={self.max_ulp} max_abs={self.max_abs:.2e}  {self.config}"
+        )
 
 
 def _compare_rows(test: str, config: str, A: torch.Tensor, B: torch.Tensor) -> TestResult:
@@ -304,10 +346,12 @@ def _compare_rows(test: str, config: str, A: torch.Tensor, B: torch.Tensor) -> T
     ulp = ulp_diff(A, B)
     per_row = ulp.max(dim=-1).values if ulp.dim() >= 2 else ulp.clone()
     n_bad = int((per_row > 0).sum().item())
-    passed = (n_bad == 0)
+    passed = n_bad == 0
     max_abs = (A.float() - B.float()).abs().max().item()
     return TestResult(
-        test=test, config=config, passed=passed,
+        test=test,
+        config=config,
+        passed=passed,
         n_rows=int(A.shape[0]),
         n_bad_rows=n_bad,
         max_ulp=int(ulp.max().item()),
@@ -318,6 +362,7 @@ def _compare_rows(test: str, config: str, A: torch.Tensor, B: torch.Tensor) -> T
 # ============================================================
 # Test 1: whole-block (schedule invariance + partial neighbor isolation)
 # ============================================================
+
 
 def test_whole_block(
     op: Callable[[torch.Tensor], torch.Tensor],
@@ -345,7 +390,7 @@ def test_whole_block(
     fillers = fillers or DEFAULT_FILLERS
 
     results = []
-    for (m_s, m_b) in pairs:
+    for m_s, m_b in pairs:
         for in_spec in inputs:
             for fill_spec in fillers:
                 for seed in seeds:
@@ -356,16 +401,18 @@ def test_whole_block(
                     Y_small = op(X_small).detach().cpu().contiguous()
                     Y_big = op(X_big).detach().cpu().contiguous()
 
-                    config = (f"({m_s:>5},{m_b:<6}) in={in_spec.name:<14} "
-                              f"fill={fill_spec.name:<14} seed={seed}")
-                    results.append(_compare_rows("whole_block", config,
-                                                 Y_small, Y_big[:m_s]))
+                    config = (
+                        f"({m_s:>5},{m_b:<6}) in={in_spec.name:<14} "
+                        f"fill={fill_spec.name:<14} seed={seed}"
+                    )
+                    results.append(_compare_rows("whole_block", config, Y_small, Y_big[:m_s]))
     return results
 
 
 # ============================================================
 # Test 2: position (row-index independence)
 # ============================================================
+
 
 def test_position(
     op: Callable[[torch.Tensor], torch.Tensor],
@@ -416,6 +463,7 @@ def test_position(
 # Test 3: neighbor mutation (neighbor-value isolation)
 # ============================================================
 
+
 def test_neighbor_mutation(
     op: Callable[[torch.Tensor], torch.Tensor],
     K: int,
@@ -438,7 +486,7 @@ def test_neighbor_mutation(
     probe = _randn(1.0)((1, K), seed=-1).squeeze(0)
 
     results = []
-    for (M, p) in configs:
+    for M, p in configs:
         if p >= M:
             continue
         rows = []
@@ -463,6 +511,7 @@ def test_neighbor_mutation(
 # ============================================================
 # top-level battery
 # ============================================================
+
 
 def run_battery(
     op: Callable[[torch.Tensor], torch.Tensor],
@@ -491,13 +540,26 @@ def run_battery(
 
     results: dict[str, list[TestResult]] = {}
     results["whole_block"] = test_whole_block(
-        op, K, pairs=whole_block_pairs, inputs=inputs, fillers=fillers, seeds=seeds,
+        op,
+        K,
+        pairs=whole_block_pairs,
+        inputs=inputs,
+        fillers=fillers,
+        seeds=seeds,
     )
     results["position"] = test_position(
-        op, K, M_values=position_M_values, inputs=inputs, seeds=seeds,
+        op,
+        K,
+        M_values=position_M_values,
+        inputs=inputs,
+        seeds=seeds,
     )
     results["neighbor_mut"] = test_neighbor_mutation(
-        op, K, configs=neighbor_configs, neighbor_specs=fillers, seeds=seeds,
+        op,
+        K,
+        configs=neighbor_configs,
+        neighbor_specs=fillers,
+        seeds=seeds,
     )
     return results
 
@@ -536,12 +598,14 @@ def print_report(
 # bridges for non-torch kernels
 # ============================================================
 
+
 def numpy_bf16_op(fn: Callable) -> Callable[[torch.Tensor], torch.Tensor]:
     """Adapter: wrap a numpy-bfloat16 op into the torch-CPU contract the kit expects.
 
     fn signature: (X: np.ndarray of ml_dtypes.bfloat16) -> np.ndarray of bf16.
     """
     import numpy as np
+
     try:
         import ml_dtypes
     except ImportError as e:
@@ -554,4 +618,5 @@ def numpy_bf16_op(fn: Callable) -> Callable[[torch.Tensor], torch.Tensor]:
         assert y_np.dtype == ml_dtypes.bfloat16
         y_t = torch.from_numpy(y_np.view(np.int16).copy()).view(torch.bfloat16)
         return y_t
+
     return wrapped

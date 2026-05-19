@@ -9,7 +9,7 @@ This is the serving-level property (Part A whole-block), distinct from tile det/
 Also: prefix rows of a larger batch vs running only the prefix (your 512 vs 128×512 case).
 
 Run from batch_invariance/:
-    python tests/test_matmul_m_invariance.py
+    python tests/test_l1b_matmul_m_invariance.py
 """
 
 from __future__ import annotations
@@ -27,15 +27,8 @@ from kernels.matmul_batch_invariant import nki_matmul_kernel_isa
 
 
 def matmul_rows(a_mk: torch.Tensor, w_kn: torch.Tensor, deterministic: bool = True) -> torch.Tensor:
-    """Standard (M, K) @ (K, N) via NKI kernel. Pads M to multiple of 128 (kernel contract)."""
-    M, K = a_mk.shape
-    M_TILE = 128
-    M_padded = ((M + M_TILE - 1) // M_TILE) * M_TILE
-    if M_padded > M:
-        pad = torch.zeros(M_padded - M, K, dtype=a_mk.dtype, device=a_mk.device)
-        a_mk = torch.cat([a_mk, pad], dim=0)
-    result = nki_matmul_kernel_isa(a_mk.T.contiguous(), w_kn, deterministic=deterministic)
-    return result[:M]
+    """Standard (M, K) @ (K, N) via NKI kernel (M tail slabs, no batch padding)."""
+    return nki_matmul_kernel_isa(a_mk.T.contiguous(), w_kn, deterministic=deterministic)
 
 
 def assert_row_matches_isolated(
@@ -103,6 +96,17 @@ def main() -> int:
     if not ok:
         all_ok = False
     print(f"  prefix 128/512: {'PASS' if ok else 'FAIL'}")
+
+    print("\n--- M tail slab (255 rows, K=512, N=2048) ---")
+    m_tail, k_tail, n_tail = 255, 512, 2048
+    x_tail_cpu = torch.linspace(-1, 1, m_tail * k_tail, dtype=dtype).reshape(m_tail, k_tail)
+    w_tail_cpu = torch.linspace(-0.02, 0.02, k_tail * n_tail, dtype=dtype).reshape(k_tail, n_tail)
+    x_tail = to_neuron(x_tail_cpu)
+    w_tail = to_neuron(w_tail_cpu)
+    ok_tail = assert_row_matches_isolated(x_tail, w_tail, row=254, deterministic=True)
+    if not ok_tail:
+        all_ok = False
+    print(f"  row=254 (M=255 tail): {'PASS' if ok_tail else 'FAIL'}")
 
     print(f"\nOverall: {'PASS' if all_ok else 'FAIL'}")
     return 0 if all_ok else 1

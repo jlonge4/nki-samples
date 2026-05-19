@@ -6,17 +6,18 @@ Position, neighbor isolation, whole-block with multiple fillers.
 
 from __future__ import annotations
 
-import numpy as np
-
 import sys
 from pathlib import Path
+
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import harness.run_utils  # noqa: F401
-from harness.run_utils import require_neuron
 from harness.bitwise_numpy import bitwise_equal, max_abs_bf16
 from harness.nanochat_shapes import N_EMBD
+from harness.run_utils import require_neuron
+
 try:
     import ml_dtypes
 except ImportError:
@@ -81,7 +82,7 @@ def test_neighbor(rms_fn, k: int) -> bool:
                 x[p] = probe
                 outs.append(rms_fn(x)[p])
         ref = outs[0]
-        ok = all(r.shape == ref.shape and bitwise_equal(ref, o) for o in outs[1:])
+        ok = all(o.shape == ref.shape and bitwise_equal(ref, o) for o in outs[1:])
         if not ok:
             all_ok = False
         print(f"  M={m} p={p}: {'PASS' if ok else 'FAIL'} ({len(outs)} mutations)")
@@ -95,8 +96,10 @@ def test_whole_block_filler(rms_fn, k: int) -> bool:
     for m_s, m_b in pairs:
         x_s = _make_randn((m_s, k), seed=7)
         y_s = rms_fn(x_s)
-        for fname, fgen in [("zeros", lambda s, sd: np.zeros(s, dtype=ml_dtypes.bfloat16)),
-                            ("sparse", _make_sparse)]:
+        for fname, fgen in [
+            ("zeros", lambda s, sd: np.zeros(s, dtype=ml_dtypes.bfloat16)),
+            ("sparse", _make_sparse),
+        ]:
             tail = fgen((m_b - m_s, k), seed=1000)
             x_b = np.concatenate([x_s, tail], axis=0)
             y_b = rms_fn(x_b)[:m_s]

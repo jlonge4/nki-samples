@@ -15,9 +15,10 @@ Sensible demo values: seq=512, d_model=256, d_head=128, d_ffn=512
 """
 
 import torch
+
 from kernels.attention_batch_invariant import nki_attention_kernel_isa
-from kernels.matmul_batch_invariant    import nki_matmul_kernel_isa
-from kernels.rmsnorm_batch_invariant   import nki_rmsnorm_kernel_isa
+from kernels.matmul_batch_invariant import nki_matmul_kernel_isa
+from kernels.rmsnorm_batch_invariant import nki_rmsnorm_kernel_isa
 
 
 def make_block_weights(d_model, d_head, d_ffn, dtype=torch.bfloat16):
@@ -34,15 +35,15 @@ def make_block_weights(d_model, d_head, d_ffn, dtype=torch.bfloat16):
     scale = 0.02
     return {
         # Projections: [in_features, out_features] — same layout as nn.Linear.weight.T
-        'wq': torch.randn(d_model, d_head,  dtype=dtype) * scale,
-        'wk': torch.randn(d_model, d_head,  dtype=dtype) * scale,
-        'wv': torch.randn(d_model, d_head,  dtype=dtype) * scale,
-        'wo': torch.randn(d_head,  d_model, dtype=dtype) * scale,
-        'w1': torch.randn(d_model, d_ffn,   dtype=dtype) * scale,
-        'w2': torch.randn(d_ffn,   d_model, dtype=dtype) * scale,
+        "wq": torch.randn(d_model, d_head, dtype=dtype) * scale,
+        "wk": torch.randn(d_model, d_head, dtype=dtype) * scale,
+        "wv": torch.randn(d_model, d_head, dtype=dtype) * scale,
+        "wo": torch.randn(d_head, d_model, dtype=dtype) * scale,
+        "w1": torch.randn(d_model, d_ffn, dtype=dtype) * scale,
+        "w2": torch.randn(d_ffn, d_model, dtype=dtype) * scale,
         # RMSNorm gains
-        'g_attn': torch.ones(d_model, dtype=dtype),
-        'g_ffn':  torch.ones(d_model, dtype=dtype),
+        "g_attn": torch.ones(d_model, dtype=dtype),
+        "g_ffn": torch.ones(d_model, dtype=dtype),
     }
 
 
@@ -80,25 +81,25 @@ def nki_transformer_block(x, weights, deterministic=True):
         return nki_attention_kernel_isa(q, k, v, deterministic=deterministic, attn_bias=causal_mask)
 
     # 1. Pre-attention RMSNorm
-    x_norm = rms(x, w['g_attn'])                  # [seq, d_model]
+    x_norm = rms(x, w["g_attn"])  # [seq, d_model]
 
     # 2. QKV projections  [seq, d_model] @ [d_model, d_head] -> [seq, d_head]
-    q = mm(x_norm, w['wq'])
-    k = mm(x_norm, w['wk'])
-    v = mm(x_norm, w['wv'])
+    q = mm(x_norm, w["wq"])
+    k = mm(x_norm, w["wk"])
+    v = mm(x_norm, w["wv"])
 
     # 3. Attention  [seq, d_head] -> [seq, d_head]
     attn_out = attn(q, k, v)
 
     # 4. Output projection + residual  [seq, d_head] @ [d_head, d_model] -> [seq, d_model]
-    x = x + mm(attn_out, w['wo'])
+    x = x + mm(attn_out, w["wo"])
 
     # 5. Pre-FFN RMSNorm
-    x_norm = rms(x, w['g_ffn'])                   # [seq, d_model]
+    x_norm = rms(x, w["g_ffn"])  # [seq, d_model]
 
     # 6. FFN  [seq, d_model] @ [d_model, d_ffn] -> [seq, d_ffn] -> [seq, d_model]
-    h = mm(x_norm, w['w1'])                        # [seq, d_ffn]
-    h = torch.relu(h)                              # element-wise, stays on device
-    x = x + mm(h, w['w2'])                         # [seq, d_model]
+    h = mm(x_norm, w["w1"])  # [seq, d_ffn]
+    h = torch.relu(h)  # element-wise, stays on device
+    x = x + mm(h, w["w2"])  # [seq, d_model]
 
     return x

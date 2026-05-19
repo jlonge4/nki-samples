@@ -74,10 +74,10 @@ def nki_attention_kernel_isa(q, k, v, deterministic=True, attn_bias=None):
     seq_q, d_head = q.shape
     seq_k = k.shape[0]
 
-    Q_TILE          = 128
-    D_TILE          = 128
+    Q_TILE = 128
+    D_TILE = 128
     KV_TILE_SOFTMAX = 128  # Fixed -- softmax reductions are always identical
-    KV_TILE         = 128 if deterministic else 64  # Only scores@V varies
+    KV_TILE = 128 if deterministic else 64  # Only scores@V varies
 
     scale = float(d_head) ** -0.5
 
@@ -88,7 +88,7 @@ def nki_attention_kernel_isa(q, k, v, deterministic=True, attn_bias=None):
 
         # Load Q tile and transpose to [D_TILE, Q_TILE] for stationary in matmul
         q_tile = nl.ndarray((Q_TILE, D_TILE), dtype=q.dtype, buffer=nl.sbuf)
-        nisa.dma_copy(dst=q_tile, src=q[q_start:q_start + Q_TILE, 0:D_TILE])
+        nisa.dma_copy(dst=q_tile, src=q[q_start : q_start + Q_TILE, 0:D_TILE])
         q_t_psum = nl.ndarray((D_TILE, Q_TILE), dtype=q.dtype, buffer=nl.psum)
         nisa.nc_transpose(q_t_psum, q_tile)
         q_t = nl.ndarray((D_TILE, Q_TILE), dtype=q.dtype, buffer=nl.sbuf)
@@ -103,7 +103,7 @@ def nki_attention_kernel_isa(q, k, v, deterministic=True, attn_bias=None):
             kv_start = kv_idx * KV_TILE_SOFTMAX
 
             k_tile = nl.ndarray((KV_TILE_SOFTMAX, D_TILE), dtype=k.dtype, buffer=nl.sbuf)
-            nisa.dma_copy(dst=k_tile, src=k[kv_start:kv_start + KV_TILE_SOFTMAX, 0:D_TILE])
+            nisa.dma_copy(dst=k_tile, src=k[kv_start : kv_start + KV_TILE_SOFTMAX, 0:D_TILE])
             k_t_psum = nl.ndarray((D_TILE, KV_TILE_SOFTMAX), dtype=k.dtype, buffer=nl.psum)
             nisa.nc_transpose(k_t_psum, k_tile)
             k_t = nl.ndarray((D_TILE, KV_TILE_SOFTMAX), dtype=k.dtype, buffer=nl.sbuf)
@@ -115,25 +115,33 @@ def nki_attention_kernel_isa(q, k, v, deterministic=True, attn_bias=None):
             nisa.tensor_scalar(dst=qk_sbuf, data=qk_psum, op0=nl.multiply, operand0=scale)
             if attn_bias is not None:
                 bias_tile = nl.ndarray((Q_TILE, KV_TILE_SOFTMAX), dtype=nl.float32, buffer=nl.sbuf)
-                nisa.dma_copy(dst=bias_tile,
-                              src=attn_bias[q_start:q_start + Q_TILE,
-                                            kv_start:kv_start + KV_TILE_SOFTMAX])
+                nisa.dma_copy(
+                    dst=bias_tile,
+                    src=attn_bias[
+                        q_start : q_start + Q_TILE,
+                        kv_start : kv_start + KV_TILE_SOFTMAX,
+                    ],
+                )
                 qk_biased = nl.ndarray((Q_TILE, KV_TILE_SOFTMAX), dtype=nl.float32, buffer=nl.sbuf)
                 nisa.tensor_tensor(dst=qk_biased, data1=qk_sbuf, data2=bias_tile, op=nl.add)
-                nisa.dma_copy(dst=scores_sbuf[0:Q_TILE, kv_start:kv_start + KV_TILE_SOFTMAX],
-                              src=qk_biased)
+                nisa.dma_copy(
+                    dst=scores_sbuf[0:Q_TILE, kv_start : kv_start + KV_TILE_SOFTMAX],
+                    src=qk_biased,
+                )
             else:
-                nisa.dma_copy(dst=scores_sbuf[0:Q_TILE, kv_start:kv_start + KV_TILE_SOFTMAX],
-                              src=qk_sbuf)
+                nisa.dma_copy(
+                    dst=scores_sbuf[0:Q_TILE, kv_start : kv_start + KV_TILE_SOFTMAX],
+                    src=qk_sbuf,
+                )
 
         # ── Row max (fixed KV_TILE_SOFTMAX) ──────────────────────────────────
         row_max = nl.ndarray((Q_TILE, 1), dtype=nl.float32, buffer=nl.sbuf)
-        nisa.memset(dst=row_max, value=-3.4028235e+38)
+        nisa.memset(dst=row_max, value=-3.4028235e38)
 
         for kv_idx in nl.affine_range(seq_k // KV_TILE_SOFTMAX):
             kv_start = kv_idx * KV_TILE_SOFTMAX
             s = nl.ndarray((Q_TILE, KV_TILE_SOFTMAX), dtype=nl.float32, buffer=nl.sbuf)
-            nisa.dma_copy(dst=s, src=scores_sbuf[0:Q_TILE, kv_start:kv_start + KV_TILE_SOFTMAX])
+            nisa.dma_copy(dst=s, src=scores_sbuf[0:Q_TILE, kv_start : kv_start + KV_TILE_SOFTMAX])
             tile_max = nl.ndarray((Q_TILE, 1), dtype=nl.float32, buffer=nl.sbuf)
             nisa.tensor_reduce(dst=tile_max, data=s, op=nl.maximum, axis=(1,), negate=False)
             nisa.tensor_tensor(dst=row_max, data1=row_max, data2=tile_max, op=nl.maximum)
@@ -148,11 +156,13 @@ def nki_attention_kernel_isa(q, k, v, deterministic=True, attn_bias=None):
         for kv_idx in nl.affine_range(seq_k // KV_TILE_SOFTMAX):
             kv_start = kv_idx * KV_TILE_SOFTMAX
             s = nl.ndarray((Q_TILE, KV_TILE_SOFTMAX), dtype=nl.float32, buffer=nl.sbuf)
-            nisa.dma_copy(dst=s, src=scores_sbuf[0:Q_TILE, kv_start:kv_start + KV_TILE_SOFTMAX])
+            nisa.dma_copy(dst=s, src=scores_sbuf[0:Q_TILE, kv_start : kv_start + KV_TILE_SOFTMAX])
             exp_s = nl.ndarray((Q_TILE, KV_TILE_SOFTMAX), dtype=nl.float32, buffer=nl.sbuf)
             nisa.activation(dst=exp_s, op=nl.exp, data=s, bias=neg_max, scale=1.0)
-            nisa.dma_copy(dst=scores_sbuf[0:Q_TILE, kv_start:kv_start + KV_TILE_SOFTMAX],
-                          src=exp_s)
+            nisa.dma_copy(
+                dst=scores_sbuf[0:Q_TILE, kv_start : kv_start + KV_TILE_SOFTMAX],
+                src=exp_s,
+            )
             tile_sum = nl.ndarray((Q_TILE, 1), dtype=nl.float32, buffer=nl.sbuf)
             nisa.tensor_reduce(dst=tile_sum, data=exp_s, op=nl.add, axis=(1,), negate=False)
             nisa.tensor_tensor(dst=row_sum, data1=row_sum, data2=tile_sum, op=nl.add)
@@ -166,8 +176,10 @@ def nki_attention_kernel_isa(q, k, v, deterministic=True, attn_bias=None):
         for kv_idx in nl.affine_range(seq_k // KV_TILE_SOFTMAX):
             kv_start = kv_idx * KV_TILE_SOFTMAX
             s_f32 = nl.ndarray((Q_TILE, KV_TILE_SOFTMAX), dtype=nl.float32, buffer=nl.sbuf)
-            nisa.dma_copy(dst=s_f32,
-                          src=scores_sbuf[0:Q_TILE, kv_start:kv_start + KV_TILE_SOFTMAX])
+            nisa.dma_copy(
+                dst=s_f32,
+                src=scores_sbuf[0:Q_TILE, kv_start : kv_start + KV_TILE_SOFTMAX],
+            )
             norm = nl.ndarray((Q_TILE, KV_TILE_SOFTMAX), dtype=q.dtype, buffer=nl.sbuf)
             ones_bcast = nl.ndarray((Q_TILE, KV_TILE_SOFTMAX), dtype=nl.float32, buffer=nl.sbuf)
             nisa.memset(dst=ones_bcast, value=1.0)
@@ -179,8 +191,10 @@ def nki_attention_kernel_isa(q, k, v, deterministic=True, attn_bias=None):
                 op1=nl.multiply,
                 operand1=ones_bcast,
             )
-            nisa.dma_copy(dst=scores_sbuf[0:Q_TILE, kv_start:kv_start + KV_TILE_SOFTMAX],
-                          src=norm)
+            nisa.dma_copy(
+                dst=scores_sbuf[0:Q_TILE, kv_start : kv_start + KV_TILE_SOFTMAX],
+                src=norm,
+            )
 
         # ── scores @ V: THE invariance-relevant accumulation (variable KV_TILE)
         # Softmax scores are bit-exact bfloat16 values in both modes.
@@ -194,8 +208,7 @@ def nki_attention_kernel_isa(q, k, v, deterministic=True, attn_bias=None):
             kv_start = kv_idx * KV_TILE
 
             s = nl.ndarray((Q_TILE, KV_TILE), dtype=q.dtype, buffer=nl.sbuf)
-            nisa.dma_copy(dst=s,
-                          src=scores_sbuf[0:Q_TILE, kv_start:kv_start + KV_TILE])
+            nisa.dma_copy(dst=s, src=scores_sbuf[0:Q_TILE, kv_start : kv_start + KV_TILE])
 
             s_t_psum = nl.ndarray((KV_TILE, Q_TILE), dtype=q.dtype, buffer=nl.psum)
             nisa.nc_transpose(s_t_psum, s)
@@ -203,13 +216,13 @@ def nki_attention_kernel_isa(q, k, v, deterministic=True, attn_bias=None):
             nisa.tensor_copy(dst=s_t, src=s_t_psum)
 
             v_tile = nl.ndarray((KV_TILE, D_TILE), dtype=v.dtype, buffer=nl.sbuf)
-            nisa.dma_copy(dst=v_tile, src=v[kv_start:kv_start + KV_TILE, 0:D_TILE])
+            nisa.dma_copy(dst=v_tile, src=v[kv_start : kv_start + KV_TILE, 0:D_TILE])
 
             # stationary=[KV_TILE, Q_TILE], moving=[KV_TILE, D_TILE] -> [Q_TILE, D_TILE]
             nisa.nc_matmul(dst=out_psum, stationary=s_t, moving=v_tile)
 
         out_sbuf = nl.ndarray((Q_TILE, D_TILE), dtype=q.dtype, buffer=nl.sbuf)
         nisa.tensor_copy(dst=out_sbuf, src=out_psum)
-        nisa.dma_copy(dst=out[q_start:q_start + Q_TILE, 0:D_TILE], src=out_sbuf)
+        nisa.dma_copy(dst=out[q_start : q_start + Q_TILE, 0:D_TILE], src=out_sbuf)
 
     return out
