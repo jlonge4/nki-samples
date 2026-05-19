@@ -97,7 +97,7 @@ def test_whole_block_filler(rms_fn, k: int) -> bool:
         x_s = _make_randn((m_s, k), seed=7)
         y_s = rms_fn(x_s)
         for fname, fgen in [
-            ("zeros", lambda s, sd: np.zeros(s, dtype=ml_dtypes.bfloat16)),
+            ("zeros", lambda s, seed: np.zeros(s, dtype=ml_dtypes.bfloat16)),
             ("sparse", _make_sparse),
         ]:
             tail = fgen((m_b - m_s, k), seed=1000)

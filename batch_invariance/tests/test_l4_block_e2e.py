@@ -41,6 +41,7 @@ def main() -> int:
     def test_block_tile_invariance() -> bool:
         print(f"\n--- L4a: block det vs nondet (bf16) device={get_device()} ---")
         seq, d_model, d_ffn = DEMO_SEQ, DEMO_D_MODEL, DEMO_D_FFN
+        torch.manual_seed(42)
         weights = {k: to_neuron(v) for k, v in make_block_weights(d_model, 128, d_ffn).items()}
         x = to_neuron(linspace_2d(seq, d_model))
         out_det = nki_transformer_block(x, weights, deterministic=True)
@@ -55,6 +56,7 @@ def main() -> int:
     def test_block_prefix_packing() -> bool:
         print("\n--- L4b: block prefix invariance (co-packed seq) ---")
         seq, d_model, d_ffn = DEMO_SEQ, DEMO_D_MODEL, DEMO_D_FFN
+        torch.manual_seed(43)
         weights = {k: to_neuron(v) for k, v in make_block_weights(d_model, 128, d_ffn).items()}
         x = to_neuron(linspace_2d(seq, d_model))
         filler = to_neuron(linspace_2d(seq, d_model) * 0.1)
@@ -70,6 +72,7 @@ def main() -> int:
 
     def test_block_run_to_run(n_runs: int = 3) -> bool:
         print("\n--- L4c: block run-to-run ---")
+        torch.manual_seed(44)
         weights = {
             k: to_neuron(v) for k, v in make_block_weights(DEMO_D_MODEL, 128, DEMO_D_FFN).items()
         }
