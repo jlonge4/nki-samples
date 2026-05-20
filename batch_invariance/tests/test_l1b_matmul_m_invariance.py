@@ -1,16 +1,4 @@
-"""
-MatMul batch / M invariance — row from full matmul vs matmul of that row alone.
-
-This is the serving-level property (Part A whole-block), distinct from tile det/nondet:
-
-    Y = X @ W                         # X is (M, K), W is (K, N)
-    Y[i] == (X[i:i+1] @ W)[0]         # bitwise, for batch-invariant matmul
-
-Also: prefix rows of a larger batch vs running only the prefix (your 512 vs 128×512 case).
-
-Run from batch_invariance/:
-    python tests/test_l1b_matmul_m_invariance.py
-"""
+"""Row schedule invariance (Part A spot): Y[i] from full M vs isolated row; prefix rows."""
 
 from __future__ import annotations
 

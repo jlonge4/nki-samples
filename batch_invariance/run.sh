@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Single entry point: ./run.sh {e2e|sim|setup-sim|demo|debug}
+# ./run.sh e2e | sim | setup-sim | demo | debug
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
@@ -9,13 +9,12 @@ PY="${PYTHON:-python3}"
 usage() {
   cat <<'EOF'
 Usage:
-  ./run.sh e2e              Trainium harness (L0–L4 + determinism)
-  ./run.sh sim              CPU simulator (inspect + tests/run_simulator.py)
-  SIM_FULL=1 ./run.sh sim   Full nanochat-shaped bi_testkit on CPU
-  ./run.sh setup-sim        Create nki-cpu-sim/ venv (macOS wheel hack)
-  ./run.sh demo             Toy 2-block deterministic inference (Trainium)
-  ./run.sh debug psum       PSUM K-tile debug (CPU)
-  ./run.sh debug m-tail     MatMul M-tail debug (CPU)
+  ./run.sh e2e              Trainium: properties in README table
+  ./run.sh sim              CPU: reduction-tile + row battery + attention_cte sim
+  SIM_FULL=1 ./run.sh sim   Larger H and attention seqlen sweep
+  ./run.sh setup-sim        nki-cpu-sim venv
+  ./run.sh demo             Toy inference (Trainium)
+  ./run.sh debug psum|m-tail
 EOF
 }
 
@@ -36,13 +35,12 @@ run_e2e() {
       FAIL=$((FAIL + 1))
     fi
   }
-  run_one "L0 tile invariance" tests/test_l0_tile_invariance.py
-  run_one "L1 serving battery" tests/test_l1_serving_battery.py
-  run_one "L1b matmul M" tests/test_l1b_matmul_m_invariance.py
-  run_one "L2 continuous batching" tests/test_l2_continuous_batching.py
-  run_one "L3 attention packing" tests/test_l3_attention_packing.py
-  run_one "L4 block E2E" tests/test_l4_block_e2e.py
-  run_one "Determinism harness" tests/test_determinism_harness.py
+  run_one "Reduction-tile invariance" tests/test_l0_tile_invariance.py
+  run_one "Row schedule invariance (Part A battery)" tests/test_l1_serving_battery.py
+  run_one "Row schedule invariance (MatMul spot)" tests/test_l1b_matmul_m_invariance.py
+  run_one "Attention batch invariance (Part B)" tests/test_l3_attention_packing.py
+  run_one "Composed block" tests/test_l4_block_e2e.py
+  run_one "Run-to-run stability" tests/test_determinism_harness.py
   echo ""
   echo "========================================================================"
   if [ "$FAIL" -eq 0 ]; then echo "  e2e: PASS"; exit 0; fi

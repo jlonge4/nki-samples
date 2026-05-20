@@ -98,6 +98,15 @@ def bitwise_equal(a: torch.Tensor, b: torch.Tensor) -> bool:
     return torch.equal(_uint_view(a), _uint_view(b))
 
 
+def bitwise_equal_ndarray(a, b) -> bool:
+    """Bitwise bf16/fp compare for numpy arrays (same contract as ``bitwise_equal``)."""
+    import numpy as np
+
+    if a.shape != b.shape or a.dtype != b.dtype:
+        return False
+    return bool(np.array_equal(a.view(np.uint16), b.view(np.uint16)))
+
+
 def _ordered_int(x: torch.Tensor) -> torch.Tensor:
     """Map IEEE-754 sign-magnitude bits to ordered two's-complement-like ints,
     so that adjacent representable floats differ by exactly 1 and the ordering

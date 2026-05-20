@@ -21,5 +21,8 @@ curl -L -o "$WHEEL_DIR/nki-linux.whl" \
 cp "$WHEEL_DIR/nki-linux.whl" "$WHEEL_DIR/nki-0.3.0-cp312-cp312-macosx_14_0_arm64.whl"
 pip install "$WHEEL_DIR/nki-0.3.0-cp312-cp312-macosx_14_0_arm64.whl" --no-deps
 
+echo "Installing nki-library (attention_cte) from GitHub..."
+pip install "git+https://github.com/aws-neuron/nki-library.git" -q
+
 echo ""
 echo "Done.  source nki-cpu-sim/bin/activate && ./run.sh sim"

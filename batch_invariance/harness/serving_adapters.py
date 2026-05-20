@@ -1,7 +1,7 @@
 """
 Adapters: batch-invariant NKI kernels -> bi_testkit op contract (M, K) -> (M, N).
 
-All serving tests use deterministic=True (fixed tiles). L0 tile A vs B is separate.
+All row-schedule tests use deterministic=True (fixed tiles). Reduction-tile tests are separate.
 """
 
 from __future__ import annotations

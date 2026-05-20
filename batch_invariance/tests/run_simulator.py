@@ -28,6 +28,8 @@ from harness.sim_utils import (
 )
 
 FAST_WB_PAIRS = [(1, 128), (127, 128), (255, 256), (128, 256)]
+FAST_ATTN_SEQLENS = (128, 256)
+FULL_ATTN_SEQLENS = (128, 256, 512, 1024)
 
 
 def _sim_full() -> bool:
@@ -63,60 +65,70 @@ def test_tile_invariance() -> int:
     import ml_dtypes
     import numpy as np
 
-    from kernels.attention_batch_invariant import nki_attention_kernel_isa
     from kernels.matmul_batch_invariant import nki_matmul_kernel_isa
     from kernels.rmsnorm_batch_invariant import nki_rmsnorm_kernel_isa
 
-    sim_attn = simulate(nki_attention_kernel_isa)
     sim_mm = simulate(nki_matmul_kernel_isa)
     sim_rms = simulate(nki_rmsnorm_kernel_isa)
 
-    seq, d, k, m, n, h = 128, 128, 512, 128, 512, _hidden_dim()
+    k, m, n, h = 512, 128, 512, _hidden_dim()
     cases = [
-        (
-            "attention bf16",
-            lambda: _tile_pair(
-                sim_attn,
-                [
-                    linspace_bf16((seq, d)),
-                    linspace_bf16((seq, d)),
-                    linspace_bf16((seq, d)),
-                ],
-            ),
-        ),
         (
             "matmul bf16",
             lambda: _tile_pair(
                 sim_mm,
-                [
-                    linspace_bf16((k, m)),
-                    linspace_bf16((k, n)),
-                ],
+                [linspace_bf16((k, m)), linspace_bf16((k, n))],
             ),
         ),
         (
             "rmsnorm bf16",
             lambda: _tile_pair(
                 sim_rms,
-                [
-                    linspace_bf16((m, h)),
-                    np.ones(h, dtype=ml_dtypes.bfloat16),
-                ],
+                [linspace_bf16((m, h)), np.ones(h, dtype=ml_dtypes.bfloat16)],
             ),
         ),
     ]
 
     fails = 0
-    print("\n=== Tile invariance (nki.simulate, det vs nondet) ===")
+    print("\n=== Reduction-tile invariance (simulate) ===")
     for label, run in cases:
         diff, ok = run()
-        if not ok and label.startswith("attention"):
-            status = f"SKIP sim gap (max_abs={diff:.3e})"
-        else:
-            status = "PASS" if ok else f"FAIL (max_abs={diff:.3e})"
-            if not ok:
-                fails += 1
+        status = "PASS" if ok else f"FAIL (max_abs={diff:.3e})"
+        if not ok:
+            fails += 1
         print(f"  [{status:>28s}]  {label}")
+    return fails
+
+
+def test_attention_cte_sim() -> int:
+    from harness.attention_cte_ops import import_attention_cte
+    from harness.attention_cte_ops import check_batch_schedule, check_padded_kv, check_run_to_run
+    from harness.nanochat_shapes import N_HEAD
+
+    attention_cte = import_attention_cte()
+    if attention_cte is None:
+        print("\n=== attention_cte (nki.simulate) ===")
+        print("  SKIP: install nki-library (see README)")
+        return 0
+
+    sim_cte = simulate(attention_cte)
+    batch_heads = N_HEAD if _sim_full() else 2
+    seqlens = FULL_ATTN_SEQLENS if _sim_full() else FAST_ATTN_SEQLENS
+    pad_sizes = (256, 512) if _sim_full() else (256,)
+
+    fails = 0
+    print(f"\n=== Attention batch invariance (simulate, heads={batch_heads}) ===\nPadded KV:")
+    if not check_padded_kv(sim_cte, seq_k_big=pad_sizes):
+        fails += 1
+
+    print("\nAlone vs co-packed batch:")
+    if not check_batch_schedule(sim_cte, batch_heads=batch_heads, multipliers=(1, 2)):
+        fails += 1
+
+    print("\nRun-to-run:")
+    if not check_run_to_run(sim_cte, seqlens, batch_heads=batch_heads):
+        fails += 1
+
     return fails
 
 
@@ -173,7 +185,7 @@ def test_serving_battery() -> int:
     )
 
     fails = 0
-    print(f"\n=== bi_testkit via simulate (H={h}, SIM_FULL={_sim_full()}) ===")
+    print(f"\n=== Row schedule invariance (simulate, H={h}) ===")
     for name, op_fn, k, pairs in (
         ("RMSNorm", make_sim_rmsnorm_op(h), h, rms_pairs),
         ("MatMul", make_sim_matmul_op(k_mm, n_mm, "sim_linear"), k_mm, mm_pairs),
@@ -190,7 +202,12 @@ def main() -> int:
         return 0
 
     print(f"NKI CPU simulator  mode={'FULL' if _sim_full() else 'fast'}")
-    fails = test_tile_invariance() + test_matmul_m_invariance() + test_serving_battery()
+    fails = (
+        test_tile_invariance()
+        + test_attention_cte_sim()
+        + test_matmul_m_invariance()
+        + test_serving_battery()
+    )
     print("\n" + "=" * 60)
     print("  simulator: PASS" if fails == 0 else f"  simulator: FAIL ({fails} groups)")
     print("=" * 60)

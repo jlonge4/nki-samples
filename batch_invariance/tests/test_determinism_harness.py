@@ -1,8 +1,4 @@
-"""
-Determinism harness — run-to-run + cross-invocation stability (deterministic=True).
-
-Combines per-kernel run-to-run with L1-style spot checks.
-"""
+"""Run-to-run stability: repeated calls + cross-M spot checks (deterministic=True)."""
 
 from __future__ import annotations
 
@@ -14,7 +10,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import harness.run_utils  # noqa: F401
-from harness.bitwise_numpy import bitwise_equal
+from harness.bi_testkit import bitwise_equal_ndarray as bitwise_equal
 from harness.nanochat_shapes import N_EMBD
 from harness.run_utils import require_neuron
 

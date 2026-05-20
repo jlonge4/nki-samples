@@ -1,9 +1,4 @@
-"""
-L1 — Part A serving contract via bi_testkit on batch-invariant kernels (nanochat shapes).
-
-Run from batch_invariance/:
-    python tests/test_l1_serving_battery.py
-"""
+"""Row schedule invariance (Part A): whole-block, position, neighbor via bi_testkit."""
 
 from __future__ import annotations
 

@@ -127,7 +127,11 @@ def _forward_neuron(token_ids, weights, *, deterministic: bool, packed_len: int 
 def run_neuron_demo() -> int:
     import torch
 
+    from harness.attention_cte_ops import require_attention_cte
     from harness.neuron_device import detect_backend, init_nki_runtime
+
+    if require_attention_cte() is None:
+        return 0
 
     if detect_backend() is None:
         print(
